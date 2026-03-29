@@ -4,13 +4,13 @@
   "description": "Official Node.js/TypeScript SDK for Crovver subscription management platform",
   "author": "Crovver <engineering@crovver.com>",
   "license": "MIT",
-  "homepage": "https://github.com/crovver/sdk#readme",
+  "homepage": "https://github.com/crovver/crovver-node#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/crovver/sdk.git"
+    "url": "git+https://github.com/crovver/crovver-node.git"
   },
   "bugs": {
-    "url": "https://github.com/crovver/sdk/issues"
+    "url": "https://github.com/crovver/crovver-node/issues"
   },
   "keywords": [
     "crovver",
@@ -45,6 +45,7 @@
     "CHANGELOG.md",
     "LICENSE"
   ],
+  "sideEffects": false,
   "engines": {
     "node": ">=18.0.0"
   },
@@ -63,7 +64,7 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build && npm run test"
+    "prepublishOnly": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
     "axios": "^1.7.0"
@@ -78,6 +79,10 @@
     "prettier": "^3.2.0",
     "ts-jest": "^29.1.0",
     "typescript": "^5.4.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "peerDependencies": {
     "typescript": ">=4.7.0"
