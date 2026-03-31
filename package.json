@@ -1,6 +1,6 @@
 {
   "name": "crovver-node",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Official Node.js/TypeScript SDK for Crovver subscription management platform",
   "author": "Crovver <engineering@crovver.com>",
   "license": "MIT",
@@ -67,7 +67,7 @@
     "prepublishOnly": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
-    "axios": "^1.7.0"
+    "axios": "^1.7.0 <1.14.1"
   },
   "devDependencies": {
     "@types/jest": "^29.5.0",

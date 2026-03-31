@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       axios:
-        specifier: ^1.7.0
+        specifier: ^1.7.0 <1.14.1
         version: 1.13.6
     devDependencies:
       '@types/jest':
