@@ -419,8 +419,8 @@ export interface CreateProrationCheckoutResponse {
 export interface CancelSubscriptionResponse {
   subscriptionId: string;
   status: string;
-  canceledAt: string;
-  willEndAt: string | null;
+  canceledAt: string | null;
+  currentPeriodEnd: string | null;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -429,14 +429,20 @@ export interface CancelSubscriptionResponse {
 
 export interface Invoice {
   id: string;
-  invoice_number: string;
-  invoice_type: string;
-  subtotal: number;
-  total_amount: number;
-  currency: string;
+  invoiceNumber: string;
+  invoiceType: string;
   status: string;
-  due_date: string | null;
-  created_at: string;
+  totalAmount: string;
+  currency: string;
+  dueDate: string | null;
+  paidAt: string | null;
+  issuedAt: string;
+  periodStart: string;
+  periodEnd: string;
+  paymentProvider: string;
+  planName: string;
+  hostedInvoiceUrl: string | null;
+  invoicePdf: string | null;
 }
 
 export interface GetInvoicesResponse {
@@ -971,6 +977,7 @@ export class CrovverClient {
    * period (cancel-at-period-end behaviour).
    *
    * @param subscriptionId - The Crovver subscription ID
+   * @param externalTenantId - External tenant ID (for verification)
    * @param reason - Cancellation reason (required by the API)
    * @param feedback - Optional free-text feedback
    *
@@ -978,6 +985,7 @@ export class CrovverClient {
    * ```typescript
    * const result = await crovver.cancelSubscription(
    *   'sub-uuid',
+   *   'company-123',
    *   'too_expensive',
    *   'Pricing is a bit high for our team size',
    * );
@@ -986,13 +994,14 @@ export class CrovverClient {
    */
   async cancelSubscription(
     subscriptionId: string,
+    externalTenantId: string,
     reason: string,
     feedback?: string
   ): Promise<CancelSubscriptionResponse> {
     return this.withRetry(async () => {
       const response = await this.client.post<CancelSubscriptionResponse>(
         `/api/public/subscriptions/${subscriptionId}/cancel`,
-        { reason, feedback }
+        { externalTenantId, reason, feedback }
       );
       return response.data;
     });

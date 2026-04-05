@@ -1,6 +1,6 @@
 {
   "name": "crovver-node",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Official Node.js/TypeScript SDK for Crovver subscription management platform",
   "author": "Crovver <engineering@crovver.com>",
   "license": "MIT",
