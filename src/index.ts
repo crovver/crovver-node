@@ -111,7 +111,7 @@ export interface CreateTenantRequest {
   /** URL-friendly slug (optional, auto-generated from name if not provided) */
   slug?: string;
   /** Owner's user ID from your app */
-  ownerExternalUserId: string;
+  externalUserId: string;
   /** Owner's email (optional) */
   ownerEmail?: string;
   /** Owner's name (optional) */
@@ -308,9 +308,9 @@ export type PaymentProvider = "stripe" | "paddle" | "lemonsqueezy";
 
 export interface CreateCheckoutSessionRequest {
   /** User making the purchase */
-  requestingUserId: string;
+  externalUserId: string;
   /** Tenant ID (required for B2B, optional for D2C) */
-  requestingTenantId?: string;
+  externalTenantId?: string;
   /** Plan to subscribe to */
   planId: string;
   /** Payment provider to use */
@@ -392,7 +392,7 @@ export interface CheckUsageLimitResponse {
 
 export interface CreateProrationCheckoutRequest {
   /** External tenant ID */
-  requestingEntityId: string;
+  externalTenantId: string;
   /** New total seat capacity to upgrade to */
   newCapacity: number;
   /** Plan ID (optional if the tenant only has one active subscription) */
@@ -674,7 +674,7 @@ export class CrovverClient {
    * const result = await crovver.createTenant({
    *   externalTenantId: 'company-123',
    *   name: 'Acme Corporation',
-   *   ownerExternalUserId: 'user-456',
+   *   externalUserId: 'user-456',
    *   ownerEmail: 'admin@acme.com',
    * });
    * console.log('Tenant created:', result.tenant.id);
@@ -781,8 +781,8 @@ export class CrovverClient {
   /**
    * Create a checkout session for payment
    *
-   * For B2B: Provide requestingUserId and requestingTenantId
-   * For D2C: Provide requestingUserId, userEmail, and userName (tenant auto-created)
+   * For B2B: Provide externalUserId and externalTenantId
+   * For D2C: Provide externalUserId, userEmail, and userName (tenant auto-created)
    *
    * @param request - Checkout session request
    * @returns Checkout URL to redirect the user to
@@ -791,8 +791,8 @@ export class CrovverClient {
    * ```typescript
    * // B2B checkout
    * const checkout = await crovver.createCheckoutSession({
-   *   requestingUserId: 'user-456',
-   *   requestingTenantId: 'company-123',
+   *   externalUserId: 'user-456',
+   *   externalTenantId: 'company-123',
    *   planId: 'plan-uuid',
    *   provider: 'stripe',
    *   successUrl: 'https://myapp.com/success',
@@ -931,7 +931,7 @@ export class CrovverClient {
    * @example
    * ```typescript
    * const checkout = await crovver.createProrationCheckout({
-   *   requestingEntityId: 'company-123',
+   *   externalTenantId: 'company-123',
    *   newCapacity: 15,
    *   planId: 'plan-uuid',          // optional
    *   successUrl: 'https://myapp.com/success',
@@ -950,7 +950,7 @@ export class CrovverClient {
     const response = await this.client.post<CreateProrationCheckoutResponse>(
       "/api/public/capacity/proration-checkout",
       {
-        requestingEntityId: params.requestingEntityId,
+        externalTenantId: params.externalTenantId,
         newCapacity: params.newCapacity,
         planId: params.planId,
         successUrl: params.successUrl,
