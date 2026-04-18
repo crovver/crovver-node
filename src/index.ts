@@ -189,6 +189,7 @@ export interface Product {
 export interface PaymentProviderMapping {
   provider_id: string;
   provider_type: string;
+  provider_name?: string;
   /** External price ID for flat-rate plans */
   external_price_id?: string;
   /** External product ID for seat-based plans */
@@ -200,19 +201,36 @@ export interface PaymentProviderMapping {
   is_active: boolean;
 }
 
+/** Per-currency price entry from the plan_prices table */
+export interface PlanPrice {
+  currency: string;
+  amount: number | null;
+  basePrice: number | null;
+  perSeatPrice: number | null;
+}
+
 export interface Plan {
   id: string;
   name: string;
   description?: string;
+  /** First/default price (backwards compatibility) */
   pricing: PlanPricing;
+  /** All configured prices, one per currency */
+  prices: PlanPrice[];
   trial: PlanTrial;
   test_mode: boolean;
+  isFree: boolean;
+  isSeatBased: boolean;
   features: Record<string, boolean>;
   limits: Record<string, number | null>;
   product: Product;
+  /** @deprecated Use paymentProviders */
   payment_providers: PaymentProviderMapping[];
+  paymentProviders: PaymentProviderMapping[];
   created_at: string;
   updated_at: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface GetPlansResponse {
@@ -325,6 +343,8 @@ export interface CreateCheckoutSessionRequest {
   userName?: string;
   /** Custom metadata */
   metadata?: Record<string, unknown>;
+  /** Currency code (ISO 4217, e.g. "USD", "NPR"). Defaults to plan's primary currency. */
+  currency?: string;
   /** Number of seats to purchase (for seat-based plans) */
   quantity?: number;
 }
