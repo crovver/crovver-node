@@ -209,6 +209,15 @@ export interface PlanPrice {
   perSeatPrice: number | null;
 }
 
+export interface CreditPool {
+  pool_key: string;
+  display_name: string;
+  limit_per_period: number;
+  refill_behavior: "reset" | "rollover";
+  limit_behavior: "hard" | "soft";
+  rollover_cap: number | null;
+}
+
 export interface Plan {
   id: string;
   name: string;
@@ -222,7 +231,7 @@ export interface Plan {
   isFree: boolean;
   isSeatBased: boolean;
   features: Record<string, boolean>;
-  limits: Record<string, number | null>;
+  creditPools: CreditPool[];
   product: Product;
   /** @deprecated Use paymentProviders */
   payment_providers: PaymentProviderMapping[];
@@ -240,6 +249,49 @@ export interface GetPlansResponse {
     name: string;
     type: "b2b" | "d2c";
   };
+}
+
+export interface AvailableAddon {
+  id: string;
+  pool_key: string;
+  display_name: string;
+  description: string | null;
+  credit_qty: number;
+  expiry_type: "period" | "days" | "never";
+  expiry_days: number | null;
+  currency: string;
+  amount: number;
+  provider_id: string;
+  external_price_id: string | null;
+  current_balance: number;
+  pool_limit: number | null;
+}
+
+export interface AddonPurchaseRequest {
+  addonId: string;
+  currency: string;
+  idempotencyKey: string;
+  successUrl?: string;
+  cancelUrl?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AddonPurchaseResponse {
+  purchaseId: string;
+  checkoutUrl: string | null;
+  requiresPayment: boolean;
+  addonName: string;
+  creditQty: number;
+  amount: number;
+  currency: string;
+  alreadyProcessed?: boolean;
+}
+
+export interface ActiveAddonPool {
+  pool_key: string;
+  addon_remaining: string;
+  active_addon_grants: string;
+  next_addon_expiry: string | null;
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -270,7 +322,7 @@ export interface SubscriptionPlan {
   description?: string;
   pricing: PlanPricing;
   features: Record<string, boolean>;
-  limits: Record<string, number | null>;
+  creditPools: CreditPool[];
 }
 
 export type SubscriptionStatus =
@@ -405,6 +457,43 @@ export interface CheckUsageLimitResponse {
   /** Usage percentage (null = unlimited) */
   percentage: number | null;
 }
+
+// ────────────────────────────────────────────────────────────────────────
+// Credit Types
+// ────────────────────────────────────────────────────────────────────────
+
+export interface ConsumeInput {
+  /** External tenant ID from your SaaS app */
+  tenantId: string;
+  /** Pool key, e.g. 'job_posts', 'api_calls' */
+  poolKey: string;
+  /** Number of credits to consume — must be a positive integer */
+  amount: number;
+  /** Stable per-event key — never use random values */
+  idempotencyKey: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ConsumeResponse {
+  result: "allowed" | "blocked" | "warning";
+  remaining: number;
+  alreadyProcessed: boolean;
+  poolKey: string;
+}
+
+export interface PoolBalance {
+  poolKey: string;
+  displayName: string;
+  baseRemaining: number;
+  addonRemaining: number;
+  total: number;
+  limit: number;
+  limitBehavior: "hard" | "soft";
+  nextExpiry: string | null;
+  usagePercent: number;
+}
+
+export type BalanceResponse = Record<string, PoolBalance>;
 
 // ────────────────────────────────────────────────────────────────────────
 // Proration Types
@@ -1080,6 +1169,111 @@ export class CrovverClient {
       return response.data;
     });
   }
+
+  // ────────────────────────────────────────────────────────────────────────
+  // CREDITS
+  // ────────────────────────────────────────────────────────────────────────
+
+  credits = {
+    /**
+     * Consume credits from a named pool. Idempotent — safe to retry with the
+     * same idempotencyKey. Use a stable key derived from the event (e.g.
+     * `job_post:create:${jobId}`), never a random UUID.
+     *
+     * @example
+     * const result = await crovver.credits.consume({
+     *   tenantId: 'company-123',
+     *   poolKey: 'job_posts',
+     *   amount: 1,
+     *   idempotencyKey: `job_post:create:${jobId}`,
+     * });
+     * if (result.result === 'blocked') throw new Error('Credit limit reached');
+     */
+    consume: async (input: ConsumeInput): Promise<ConsumeResponse> => {
+      return this.withRetry(async () => {
+        const response = await this.client.post<ConsumeResponse>(
+          "/api/public/credits/consume",
+          input
+        );
+        return response.data;
+      });
+    },
+
+    /**
+     * Get credit balance for a tenant, keyed by pool_key.
+     *
+     * @example
+     * const balance = await crovver.credits.balance({ tenantId: 'company-123' });
+     * console.log(balance.job_posts.total); // 45
+     */
+    balance: async (input: { tenantId: string }): Promise<BalanceResponse> => {
+      return this.withRetry(async () => {
+        const response = await this.client.get<BalanceResponse>(
+          `/api/public/credits/balance`,
+          { params: { tenantId: input.tenantId } }
+        );
+        return response.data;
+      });
+    },
+  };
+
+  addons = {
+    /**
+     * List addons available for purchase by a tenant, filtered by their active
+     * subscription plan and currency.
+     *
+     * @param externalTenantId - External tenant ID
+     * @returns Available addons with current balance and pricing
+     */
+    listAvailable: async (
+      externalTenantId: string
+    ): Promise<AvailableAddon[]> => {
+      return this.withRetry(async () => {
+        const response = await this.client.get<AvailableAddon[]>(
+          `/api/public/tenants/${encodeURIComponent(externalTenantId)}/addons/available`
+        );
+        return response.data;
+      });
+    },
+
+    /**
+     * Initiate an addon purchase checkout. Idempotent — pass the same
+     * idempotencyKey to safely retry without double-charging.
+     *
+     * Credits are granted by the webhook after payment is confirmed.
+     *
+     * @param externalTenantId - External tenant ID
+     * @param params - Purchase parameters
+     * @returns Checkout URL (redirect user) or null for non-Stripe providers
+     */
+    purchase: async (
+      externalTenantId: string,
+      params: AddonPurchaseRequest
+    ): Promise<AddonPurchaseResponse> => {
+      // Payment operations must not be retried to avoid duplicate charges
+      const response = await this.client.post<AddonPurchaseResponse>(
+        `/api/public/tenants/${encodeURIComponent(externalTenantId)}/addons/purchase`,
+        params
+      );
+      return response.data;
+    },
+
+    /**
+     * Get addon credit balances for a tenant, grouped by pool_key.
+     * Only shows pools where addon credits are remaining (> 0).
+     *
+     * @param externalTenantId - External tenant ID
+     * @returns Active addon pool balances
+     */
+    getActive: async (externalTenantId: string): Promise<ActiveAddonPool[]> => {
+      return this.withRetry(async () => {
+        const response = await this.client.get<ActiveAddonPool[]>(
+          `/api/public/tenants/${encodeURIComponent(externalTenantId)}/addons/active`
+        );
+        return response.data;
+      });
+    },
+  };
 }
 
 export default CrovverClient;
