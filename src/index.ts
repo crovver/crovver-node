@@ -398,7 +398,7 @@ export interface CreateCheckoutSessionRequest {
   /** Currency code (ISO 4217, e.g. "USD", "NPR"). Defaults to plan's primary currency. */
   currency?: string;
   /** Number of seats to purchase (for seat-based plans) */
-  quantity?: number;
+  totalCapacityUnits?: number;
 }
 
 export interface CreateCheckoutSessionResponse {
