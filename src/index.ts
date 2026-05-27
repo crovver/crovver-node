@@ -459,6 +459,88 @@ export interface CheckUsageLimitResponse {
 }
 
 // ────────────────────────────────────────────────────────────────────────
+// Bulk Seat Allocation Types
+// ────────────────────────────────────────────────────────────────────────
+
+export interface BulkAllocateSeatUser {
+  /** Your SaaS app's user ID */
+  externalUserId: string;
+  /** User's email address (optional) */
+  email?: string;
+  /** User's display name (optional) */
+  name?: string;
+}
+
+export interface BulkAllocateSeatsRequest {
+  /** External tenant ID */
+  requestingEntityId: string;
+  /** List of users to allocate — max 100 per request */
+  users: BulkAllocateSeatUser[];
+  /** Metadata attached to every allocation (optional) */
+  metadata?: Record<string, unknown>;
+}
+
+export interface BulkAllocateSeatsCapacity {
+  activeCount: number;
+  capacityUnits: number;
+}
+
+export interface BulkAllocateSeatsResponse {
+  /** User IDs inserted this call */
+  allocated: string[];
+  /** Already active — not re-inserted (idempotent) */
+  skipped: string[];
+  /** Would exceed capacity_units — not inserted */
+  rejected: string[];
+  capacity: BulkAllocateSeatsCapacity;
+  /** Set when some users were rejected due to capacity limit */
+  message?: string;
+}
+
+export interface GetAllocationsRequest {
+  /** External tenant ID */
+  requestingEntityId: string;
+  /** Filter by allocation status (default: active) */
+  status?: 'active' | 'removed' | 'all';
+  /** 1-based page number (default: 1) */
+  page?: number;
+  /** Page size, max 100 (default: 50) */
+  limit?: number;
+}
+
+export interface AllocationUser {
+  externalUserId: string;
+  email:          string | null;
+  name:           string | null;
+  status:         'active' | 'removed';
+  allocatedAt:    string;
+  removedAt:      string | null;
+  metadata:       Record<string, unknown>;
+}
+
+export interface AllocationCapacity {
+  activeCount:           number;
+  capacityUnits:         number;
+  utilizationPercentage: number;
+  exceeded:              boolean;
+}
+
+export interface AllocationPagination {
+  total:           number;
+  page:            number;
+  limit:           number;
+  totalPages:      number;
+  hasNextPage:     boolean;
+  hasPreviousPage: boolean;
+}
+
+export interface GetAllocationsResponse {
+  allocations: AllocationUser[];
+  capacity:    AllocationCapacity;
+  pagination:  AllocationPagination;
+}
+
+// ────────────────────────────────────────────────────────────────────────
 // Credit Types
 // ────────────────────────────────────────────────────────────────────────
 
@@ -1211,6 +1293,80 @@ export class CrovverClient {
         const response = await this.client.get<BalanceResponse>(
           `/api/public/credits/balance`,
           { params: { tenantId: input.tenantId } }
+        );
+        return response.data;
+      });
+    },
+  };
+
+  // ────────────────────────────────────────────────────────────────────────
+  // CAPACITY / SEAT ALLOCATION
+  // ────────────────────────────────────────────────────────────────────────
+
+  capacity = {
+    /**
+     * Bulk-allocate multiple users to a tenant's active subscription in one
+     * atomic operation. Up to 100 users per request.
+     *
+     * - Users already active are skipped (idempotent).
+     * - Users that would exceed `capacity_units` are returned as `rejected`.
+     * - No proration — upgrade capacity first if needed.
+     *
+     * @example
+     * const result = await crovver.capacity.bulkAllocate({
+     *   requestingEntityId: 'company-123',
+     *   users: [
+     *     { externalUserId: 'u1', email: 'alice@co.com', name: 'Alice' },
+     *     { externalUserId: 'u2', email: 'bob@co.com',   name: 'Bob'   },
+     *     { externalUserId: 'u3', email: 'carol@co.com', name: 'Carol' },
+     *   ],
+     * });
+     * console.log(`Allocated: ${result.allocated.length}`);
+     * console.log(`Rejected (over capacity): ${result.rejected.length}`);
+     */
+    bulkAllocate: async (
+      request: BulkAllocateSeatsRequest
+    ): Promise<BulkAllocateSeatsResponse> => {
+      // Not retried — prevents duplicate allocations on network retry
+      const response = await this.client.post<BulkAllocateSeatsResponse>(
+        "/api/public/capacity/bulk-allocate",
+        request
+      );
+      return response.data;
+    },
+
+    /**
+     * List capacity allocations for a tenant.
+     *
+     * Returns the users allocated to the tenant's active subscription,
+     * along with a capacity summary and pagination metadata.
+     *
+     * @example
+     * const result = await crovver.capacity.getAllocations({
+     *   requestingEntityId: 'company-123',
+     * });
+     * console.log(result.allocations); // [{ externalUserId, email, name, ... }]
+     *
+     * // Page through all users (active + removed)
+     * const page2 = await crovver.capacity.getAllocations({
+     *   requestingEntityId: 'company-123',
+     *   status: 'all',
+     *   page: 2,
+     *   limit: 25,
+     * });
+     */
+    getAllocations: async (
+      request: GetAllocationsRequest
+    ): Promise<GetAllocationsResponse> => {
+      return this.withRetry(async () => {
+        const params = new URLSearchParams({
+          requestingEntityId: request.requestingEntityId,
+          ...(request.status !== undefined && { status: request.status }),
+          ...(request.page   !== undefined && { page:   String(request.page)  }),
+          ...(request.limit  !== undefined && { limit:  String(request.limit) }),
+        });
+        const response = await this.client.get<GetAllocationsResponse>(
+          `/api/public/capacity/allocations?${params}`
         );
         return response.data;
       });
