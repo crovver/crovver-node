@@ -323,17 +323,18 @@ export interface SubscriptionPlan {
   pricing: PlanPricing;
   features: Record<string, boolean>;
   creditPools: CreditPool[];
+  productId?: string;
+  productName?: string;
+  productSlug?: string;
 }
 
 export type SubscriptionStatus =
   | "active"
-  | "trialing"
+  | "trial"
   | "past_due"
+  | "pending_cancel"
   | "canceled"
-  | "unpaid"
-  | "incomplete"
-  | "incomplete_expired"
-  | "paused";
+  | "expired";
 
 export interface Subscription {
   id: string;
@@ -907,7 +908,7 @@ export class CrovverClient {
       const response = await this.client.get<GetTenantResponse>(
         "/api/public/tenants",
         {
-          params: { externalUserId: externalTenantId },
+          params: { externalTenantId },
         }
       );
       return response.data;
@@ -1032,14 +1033,16 @@ export class CrovverClient {
    */
   async canAccess(
     requestingEntityId: string,
-    featureKey: string
+    featureKey?: string,
+    productSlug?: string
   ): Promise<boolean> {
     return this.withRetry(async () => {
       const response = await this.client.post<CanAccessResponse>(
         "/api/public/can-access",
         {
           requestingEntityId,
-          featureKey,
+          ...(featureKey ? { featureKey } : {}),
+          ...(productSlug ? { productSlug } : {}),
         }
       );
       return response.data.canAccess;
@@ -1066,7 +1069,8 @@ export class CrovverClient {
     requestingEntityId: string,
     metric: string,
     value: number = 1,
-    metadata?: Record<string, unknown>
+    metadata?: Record<string, unknown>,
+    productSlug?: string
   ): Promise<RecordUsageResponse> {
     return this.withRetry(async () => {
       const response = await this.client.post<RecordUsageResponse>(
@@ -1076,6 +1080,7 @@ export class CrovverClient {
           metric,
           value,
           metadata,
+          ...(productSlug ? { productSlug } : {}),
         }
       );
       return response.data;
@@ -1098,7 +1103,8 @@ export class CrovverClient {
    */
   async checkUsageLimit(
     requestingEntityId: string,
-    metric: string
+    metric: string,
+    productSlug?: string
   ): Promise<CheckUsageLimitResponse> {
     return this.withRetry(async () => {
       const response = await this.client.post<CheckUsageLimitResponse>(
@@ -1106,6 +1112,7 @@ export class CrovverClient {
         {
           requestingEntityId,
           metric,
+          ...(productSlug ? { productSlug } : {}),
         }
       );
       return response.data;
