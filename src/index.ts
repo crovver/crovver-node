@@ -257,6 +257,8 @@ export interface AvailableAddon {
   display_name: string;
   description: string | null;
   credit_qty: number;
+  min_qty: number | null;
+  max_qty: number | null;
   expiry_type: "period" | "days" | "never";
   expiry_days: number | null;
   currency: string;
@@ -264,6 +266,8 @@ export interface AvailableAddon {
   provider_id: string;
   external_price_id: string | null;
   current_balance: number;
+  base_remaining: number;
+  addon_remaining: number;
   pool_limit: number | null;
 }
 
@@ -271,6 +275,8 @@ export interface AddonPurchaseRequest {
   addonId: string;
   currency: string;
   idempotencyKey: string;
+  /** Number of units to purchase. Defaults to 1. Must respect min_qty / max_qty from AvailableAddon. */
+  qty?: number;
   successUrl?: string;
   cancelUrl?: string;
   metadata?: Record<string, unknown>;
@@ -281,6 +287,8 @@ export interface AddonPurchaseResponse {
   checkoutUrl: string | null;
   requiresPayment: boolean;
   addonName: string;
+  qty: number;
+  unitPrice: number;
   creditQty: number;
   amount: number;
   currency: string;
@@ -554,6 +562,8 @@ export interface ConsumeInput {
   amount: number;
   /** Stable per-event key — never use random values */
   idempotencyKey: string;
+  /** Scope consumption to a specific subscription. Defaults to the most recent active one. */
+  subscriptionId?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -1295,11 +1305,16 @@ export class CrovverClient {
      * const balance = await crovver.credits.balance({ tenantId: 'company-123' });
      * console.log(balance.job_posts.total); // 45
      */
-    balance: async (input: { tenantId: string }): Promise<BalanceResponse> => {
+    balance: async (input: { tenantId: string; subscriptionId?: string }): Promise<BalanceResponse> => {
       return this.withRetry(async () => {
         const response = await this.client.get<BalanceResponse>(
           `/api/public/credits/balance`,
-          { params: { tenantId: input.tenantId } }
+          {
+            params: {
+              tenantId: input.tenantId,
+              ...(input.subscriptionId && { subscriptionId: input.subscriptionId }),
+            },
+          }
         );
         return response.data;
       });
@@ -1428,10 +1443,11 @@ export class CrovverClient {
      * @param externalTenantId - External tenant ID
      * @returns Active addon pool balances
      */
-    getActive: async (externalTenantId: string): Promise<ActiveAddonPool[]> => {
+    getActive: async (externalTenantId: string, subscriptionId?: string): Promise<ActiveAddonPool[]> => {
       return this.withRetry(async () => {
         const response = await this.client.get<ActiveAddonPool[]>(
-          `/api/public/tenants/${encodeURIComponent(externalTenantId)}/addons/active`
+          `/api/public/tenants/${encodeURIComponent(externalTenantId)}/addons/active`,
+          { params: subscriptionId ? { subscriptionId } : undefined }
         );
         return response.data;
       });
