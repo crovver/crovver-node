@@ -383,7 +383,18 @@ export interface GetSubscriptionsResponse {
 // Checkout Types
 // ────────────────────────────────────────────────────────────────────────
 
-export type PaymentProvider = "stripe" | "paddle" | "lemonsqueezy";
+/**
+ * Payment providers supported by the Crovver API.
+ *
+ * - `stripe` — recurring billing, all currencies configured on the plan.
+ * - `khalti` / `esewa` / `connectips` — Nepal, NPR only, non-recurring:
+ *   one payment covers one billing interval (renewal = re-checkout), and
+ *   plans with trial days are rejected for these providers.
+ *
+ * Note: previous versions listed "paddle" and "lemonsqueezy" here; the API
+ * never accepted them (they always returned 400), so they were removed.
+ */
+export type PaymentProvider = "stripe" | "khalti" | "esewa" | "connectips";
 
 export interface CreateCheckoutSessionRequest {
   /** User making the purchase */
@@ -564,6 +575,8 @@ export interface ConsumeInput {
   idempotencyKey: string;
   /** Scope consumption to a specific subscription. Defaults to the most recent active one. */
   subscriptionId?: string;
+  /** Scope consumption to the product's active subscription (a tenant has at most one per product). */
+  productSlug?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -1305,7 +1318,7 @@ export class CrovverClient {
      * const balance = await crovver.credits.balance({ tenantId: 'company-123' });
      * console.log(balance.job_posts.total); // 45
      */
-    balance: async (input: { tenantId: string; subscriptionId?: string }): Promise<BalanceResponse> => {
+    balance: async (input: { tenantId: string; subscriptionId?: string; productSlug?: string }): Promise<BalanceResponse> => {
       return this.withRetry(async () => {
         const response = await this.client.get<BalanceResponse>(
           `/api/public/credits/balance`,
@@ -1313,6 +1326,7 @@ export class CrovverClient {
             params: {
               tenantId: input.tenantId,
               ...(input.subscriptionId && { subscriptionId: input.subscriptionId }),
+              ...(input.productSlug && { productSlug: input.productSlug }),
             },
           }
         );
