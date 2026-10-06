@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Release only after the Crovver server release that ships per-product customer types — an older server
+rejects a D2C `createTenant` and sends no `product.type`.
+
+### Changed
+
+- `CreateTenantRequest.externalTenantId` is optional: omit it to create an individual (D2C) customer keyed on `externalUserId`.
+- `Product.type` (`"b2b" | "d2c"`) added to plans' `product`.
+- `GetPlansResponse.organization.type` is deprecated — read `plans[].product.type`.
+- `GetTenantResponse.organization.type` and `GetSubscriptionsResponse.organization.type` are optional and deprecated: the
+  server no longer sends them. Type-level change for strict-null consumers that read them.
+
 ## [1.0.0] - 2026-03-29
 
 ### Added
