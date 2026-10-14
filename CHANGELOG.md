@@ -18,6 +18,15 @@ rejects a D2C `createTenant` and sends no `product.type`.
 - `GetTenantResponse.organization.type` and `GetSubscriptionsResponse.organization.type` are optional and deprecated: the
   server no longer sends them. Type-level change for strict-null consumers that read them.
 
+### Added
+
+- Tiered seat plans: `Plan.seatTiers` and, on subscription responses, `PlanPricing.seatTiers` (`PlanSeatTier`: `currency`, `minQuantity`, `maxQuantity`, `price`). A band's price is the whole period's price for any seat count in its range; a tiered plan's `basePrice` and `perSeatPrice` are 0.
+- `planPeriodCharge(plan, seats, currency?)` and `seatTierFor(tiers, currency, seats)`: price a plan at a seat count by the rules Crovver charges, tiered or not.
+
+### Changed
+
+- `CreateProrationCheckoutResponse.prorationId` is `string | null`, and the response carries `invoiceId`. On a tiered plan, a seat increase that stays in the current band is applied at once with `requiresPayment: false` and no proration record.
+
 ## [1.0.0] - 2026-03-29
 
 ### Added
