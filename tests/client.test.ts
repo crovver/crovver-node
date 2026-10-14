@@ -160,3 +160,44 @@ describe("CrovverClient", () => {
     });
   });
 });
+
+describe("planPeriodCharge", () => {
+  const { planPeriodCharge, seatTierFor } = require("../src/index");
+  const tiered = {
+    isFree: false,
+    isSeatBased: true,
+    pricing: { currency: "USD", interval: "monthly", isSeatBased: true, basePrice: 0, includedSeats: 10, perSeatPrice: 0 },
+    prices: [{ currency: "USD", amount: null, basePrice: 0, perSeatPrice: 0 }],
+    seatTiers: [
+      { currency: "USD", minQuantity: 1, maxQuantity: 10, price: "80.00" },
+      { currency: "USD", minQuantity: 11, maxQuantity: 50, price: "250.00" },
+      { currency: "USD", minQuantity: 51, maxQuantity: null, price: "400.00" },
+    ],
+  };
+
+  it("prices a tiered plan by the band holding the seat count, not seats × a band", () => {
+    expect(planPeriodCharge(tiered, 10)).toBe(80);
+    expect(planPeriodCharge(tiered, 11)).toBe(250);
+    expect(planPeriodCharge(tiered, 500)).toBe(400);
+    expect(seatTierFor(tiered.seatTiers, "usd", 50)?.minQuantity).toBe(11);
+  });
+
+  it("is null for a count no band holds, or a currency the plan has no price in", () => {
+    expect(planPeriodCharge({ ...tiered, seatTiers: tiered.seatTiers.slice(0, 2) }, 51)).toBeNull();
+    expect(planPeriodCharge({ ...tiered, seatTiers: [] }, 1, "EUR")).toBeNull();
+  });
+
+  it("keeps base + extra seats × per seat for a plan without bands, and the amount for a flat plan", () => {
+    const perSeat = {
+      ...tiered,
+      seatTiers: [],
+      pricing: { ...tiered.pricing, includedSeats: 5 },
+      prices: [{ currency: "USD", amount: null, basePrice: 50, perSeatPrice: 5 }],
+    };
+    expect(planPeriodCharge(perSeat, 8)).toBe(65);
+    expect(planPeriodCharge(perSeat, 2)).toBe(50);
+    const flat = { isFree: false, isSeatBased: false, pricing: { currency: "USD", interval: "monthly", isSeatBased: false }, prices: [{ currency: "USD", amount: 29, basePrice: null, perSeatPrice: null }] };
+    expect(planPeriodCharge(flat, 1)).toBe(29);
+    expect(planPeriodCharge({ ...flat, isFree: true }, 1)).toBe(0);
+  });
+});

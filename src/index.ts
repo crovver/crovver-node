@@ -173,6 +173,25 @@ export interface PlanPricing {
   minSeats?: number | null;
   /** Maximum number of seats */
   maxSeats?: number | null;
+  /**
+   * Subscription responses only: the plan's seat bands in the subscription's currency.
+   * Empty for a plan that is not tiered. See {@link PlanSeatTier}.
+   */
+  seatTiers?: PlanSeatTier[];
+}
+
+/**
+ * One seat band of a tiered plan. The band's `price` is the whole billing period's price for any
+ * seat count in `[minQuantity, maxQuantity]` — a flat price for the range, not a per-seat rate.
+ * A tiered plan's `basePrice` and `perSeatPrice` are 0; use {@link planPeriodCharge} to price it.
+ */
+export interface PlanSeatTier {
+  currency: string;
+  minQuantity: number;
+  /** `null` for the open top band */
+  maxQuantity: number | null;
+  /** Two-decimal string, e.g. "250.00" */
+  price: string;
 }
 
 export interface PlanTrial {
@@ -226,6 +245,11 @@ export interface Plan {
   pricing: PlanPricing;
   /** All configured prices, one per currency */
   prices: PlanPrice[];
+  /**
+   * Seat bands for every currency, ordered by currency then `minQuantity`. Empty unless the plan is
+   * tiered; absent from crovver-mvp versions that predate tiered plans.
+   */
+  seatTiers?: PlanSeatTier[];
   trial: PlanTrial;
   test_mode: boolean;
   isFree: boolean;
@@ -619,8 +643,14 @@ export interface CreateProrationCheckoutRequest {
 }
 
 export interface CreateProrationCheckoutResponse {
-  prorationId: string;
+  /**
+   * `null` when nothing is due: on a tiered plan, a seat count that stays in the current band (or a
+   * step with nothing left to prorate) is applied at once, with `requiresPayment: false`.
+   */
+  prorationId: string | null;
   checkoutUrl: string | null;
+  /** The pending invoice a redirect-gateway (Khalti / eSewa / ConnectIPS) proration settles. */
+  invoiceId?: string | null;
   requiresPayment: boolean;
   prorationAmount: number;
   prorationDetails: Record<string, unknown>;
@@ -725,6 +755,49 @@ function calculateBackoff(
 // ════════════════════════════════════════════════════════════════════════
 // CROVVER CLIENT
 // ════════════════════════════════════════════════════════════════════════
+
+/** The band holding `seats` in one currency's ladder, or `null`. */
+export function seatTierFor(
+  tiers: readonly PlanSeatTier[],
+  currency: string,
+  seats: number
+): PlanSeatTier | null {
+  const cur = currency.toUpperCase();
+  return (
+    tiers
+      .filter((t) => t.currency.toUpperCase() === cur)
+      .sort((a, b) => a.minQuantity - b.minQuantity)
+      .find((t) => t.minQuantity <= seats && (t.maxQuantity == null || seats <= t.maxQuantity)) ?? null
+  );
+}
+
+/**
+ * One billing period's price for a plan at a seat count, by the same rules Crovver charges:
+ * free is 0; a tiered plan is the price of the band holding `seats` (`null` when no band does — that
+ * count cannot be purchased); another seat-based plan is `basePrice + max(0, seats − includedSeats) ×
+ * perSeatPrice`; a flat plan is its amount. `null` too when the plan has no price in `currency`.
+ * Country-localized prices are not on the plans list, so a localized customer may be charged otherwise.
+ */
+export function planPeriodCharge(
+  plan: Pick<Plan, "isFree" | "isSeatBased" | "pricing" | "prices" | "seatTiers">,
+  seats: number,
+  currency: string = plan.pricing.currency
+): number | null {
+  if (plan.isFree) return 0;
+  const cur = currency.toUpperCase();
+  const ladder = (plan.seatTiers ?? []).filter((t) => t.currency.toUpperCase() === cur);
+  if (plan.isSeatBased && ladder.length > 0) {
+    const band = seatTierFor(ladder, cur, seats);
+    return band ? Number(band.price) : null;
+  }
+  const price = plan.prices.find((p) => p.currency.toUpperCase() === cur);
+  if (!price) return null;
+  if (!plan.isSeatBased) return price.amount == null ? null : Number(price.amount);
+  return (
+    Number(price.basePrice ?? 0) +
+    Math.max(seats - (plan.pricing.includedSeats ?? 0), 0) * Number(price.perSeatPrice ?? 0)
+  );
+}
 
 export class CrovverClient {
   private client: AxiosInstance;
