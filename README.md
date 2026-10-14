@@ -10,7 +10,7 @@ Official Node.js/TypeScript SDK for integrating [Crovver](https://crovver.com) s
 
 - **Complete API Coverage** — tenants, plans, subscriptions, checkout, entitlements, invoices, proration
 - **TypeScript Support** — full type definitions included
-- **B2B & D2C Support** — works with both organization types
+- **B2B & D2C Support** — works with both customer types (per product)
 - **Error Handling** — `CrovverError` class with status codes and retryability flags
 - **Automatic Retries** — exponential backoff with jitter for transient failures
 - **No Checkout Retry** — payment-creating endpoints are never retried to prevent duplicate charges
@@ -179,14 +179,6 @@ const checkout = await crovver.createCheckoutSession({
 
 ```typescript
 const canAccess = await crovver.canAccess("company-123", "advanced-analytics");
-```
-
-#### `recordUsage`
-
-```typescript
-await crovver.recordUsage("company-123", "api-calls", 1, {
-  endpoint: "/api/v1/users",
-});
 ```
 
 #### `checkUsageLimit`

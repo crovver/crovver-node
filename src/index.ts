@@ -152,8 +152,6 @@ export interface GetTenantResponse {
   organization: {
     id: string;
     name: string;
-    /** @deprecated No longer sent — the customer type belongs to the product (`Plan.product.type`). */
-    type?: "b2b" | "d2c";
   };
 }
 
@@ -263,11 +261,7 @@ export interface Plan {
   features: Record<string, boolean>;
   creditPools: CreditPool[];
   product: Product;
-  /** @deprecated Use paymentProviders */
-  payment_providers: PaymentProviderMapping[];
   paymentProviders: PaymentProviderMapping[];
-  created_at: string;
-  updated_at: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -277,11 +271,6 @@ export interface GetPlansResponse {
   organization: {
     id: string;
     name: string;
-    /**
-     * @deprecated One organization may sell both kinds of product — read `plans[].product.type`.
-     * This is the products' shared type, and `b2b` when they differ.
-     */
-    type: "b2b" | "d2c";
   };
 }
 
@@ -409,8 +398,6 @@ export interface GetSubscriptionsResponse {
   organization: {
     id: string;
     name: string;
-    /** @deprecated No longer sent — the customer type belongs to the product (`Plan.product.type`). */
-    type?: "b2b" | "d2c";
   };
 }
 
@@ -476,21 +463,6 @@ export interface CanAccessRequest {
 
 export interface CanAccessResponse {
   canAccess: boolean;
-}
-
-export interface RecordUsageRequest {
-  /** External tenant ID (B2B) or user ID (D2C) */
-  requestingEntityId: string;
-  /** Metric key to record usage for */
-  metric: string;
-  /** Usage value (default: 1) */
-  value?: number;
-  /** Custom metadata */
-  metadata?: Record<string, unknown>;
-}
-
-export interface RecordUsageResponse {
-  success: boolean;
 }
 
 export interface CheckUsageLimitRequest {
@@ -1153,44 +1125,6 @@ export class CrovverClient {
         }
       );
       return response.data.canAccess;
-    });
-  }
-
-  /**
-   * Record usage for a metric
-   *
-   * @param requestingEntityId - External tenant ID (B2B) or user ID (D2C)
-   * @param metric - The metric key to record usage for
-   * @param value - Usage value (default: 1)
-   * @param metadata - Optional metadata
-   *
-   * @example
-   * ```typescript
-   * await crovver.recordUsage('company-123', 'api-calls', 1, {
-   *   endpoint: '/api/v1/users',
-   *   method: 'GET'
-   * });
-   * ```
-   */
-  async recordUsage(
-    requestingEntityId: string,
-    metric: string,
-    value: number = 1,
-    metadata?: Record<string, unknown>,
-    productSlug?: string
-  ): Promise<RecordUsageResponse> {
-    return this.withRetry(async () => {
-      const response = await this.client.post<RecordUsageResponse>(
-        "/api/public/record-usage",
-        {
-          requestingEntityId,
-          metric,
-          value,
-          metadata,
-          ...(productSlug ? { productSlug } : {}),
-        }
-      );
-      return response.data;
     });
   }
 

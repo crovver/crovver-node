@@ -129,28 +129,6 @@ describe("CrovverClient", () => {
     });
   });
 
-  describe("recordUsage", () => {
-    it("sends metric without productSlug", async () => {
-      const http = mockInstance({ message: "Usage recorded", metric: "api_calls", recordedValue: 1 });
-      const client = new CrovverClient({ apiKey: "sk_test" });
-      await client.recordUsage("tenant-1", "api_calls", 1);
-      expect(http.post).toHaveBeenCalledWith(
-        "/api/public/record-usage",
-        expect.objectContaining({ requestingEntityId: "tenant-1", metric: "api_calls" })
-      );
-    });
-
-    it("includes productSlug when provided", async () => {
-      const http = mockInstance({ message: "Usage recorded", metric: "api_calls", recordedValue: 1 });
-      const client = new CrovverClient({ apiKey: "sk_test" });
-      await client.recordUsage("tenant-1", "api_calls", 1, undefined, "ats");
-      expect(http.post).toHaveBeenCalledWith(
-        "/api/public/record-usage",
-        expect.objectContaining({ productSlug: "ats" })
-      );
-    });
-  });
-
   describe("CrovverError", () => {
     it("marks 5xx errors as retryable", () => {
       const err = new CrovverError("Server error", 500);

@@ -5,10 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.0] - Unreleased
 
-Release only after the Crovver server release that ships per-product customer types — an older server
-rejects a D2C `createTenant` and sends no `product.type`.
+The SDK for the revamped Crovver server. Release only after that server release: an older server
+rejects a D2C `createTenant`, sends no `product.type` and no `seatTiers`.
+
+### Removed (breaking)
+
+- `recordUsage()`, `RecordUsageRequest` and `RecordUsageResponse`. The server's usage-events route is deprecated and nothing reads what it writes; consume credit pools with `consumeCredits()` and read them with `getCreditsBalance()`.
+- `Plan.payment_providers` (use `paymentProviders`) and `Plan.created_at` / `Plan.updated_at` (use `createdAt` / `updatedAt`). The plans endpoint never sent the snake-case fields.
+- `organization.type` on `GetPlansResponse`, `GetTenantResponse` and `GetSubscriptionsResponse`. The customer type belongs to the product: read `plans[].product.type`.
 
 ### Changed
 
