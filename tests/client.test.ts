@@ -83,6 +83,30 @@ describe("CrovverClient", () => {
     });
   });
 
+  describe("createTenant", () => {
+    const created = { tenant: { id: "t-1" }, owner: { id: "o-1" }, message: "Tenant created successfully" };
+
+    it("creates a D2C customer without externalTenantId", async () => {
+      const http = mockInstance(created);
+      const client = new CrovverClient({ apiKey: "sk_test" });
+      await client.createTenant({ name: "Ada", externalUserId: "user-1", ownerEmail: "ada@example.com" });
+      expect(http.post).toHaveBeenCalledWith(
+        "/api/public/tenants",
+        { name: "Ada", externalUserId: "user-1", ownerEmail: "ada@example.com" }
+      );
+    });
+
+    it("still sends externalTenantId for a B2B workspace", async () => {
+      const http = mockInstance(created);
+      const client = new CrovverClient({ apiKey: "sk_test" });
+      await client.createTenant({ externalTenantId: "ws-1", name: "Acme", externalUserId: "user-1" });
+      expect(http.post).toHaveBeenCalledWith(
+        "/api/public/tenants",
+        { externalTenantId: "ws-1", name: "Acme", externalUserId: "user-1" }
+      );
+    });
+  });
+
   describe("checkUsageLimit", () => {
     it("sends metric without productSlug", async () => {
       const http = mockInstance({ allowed: true, current: 5, limit: 100, remaining: 95, percentage: 5, metric: "api_calls" });

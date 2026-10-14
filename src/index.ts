@@ -104,15 +104,18 @@ export class CrovverError extends Error {
 // ────────────────────────────────────────────────────────────────────────
 
 export interface CreateTenantRequest {
-  /** Your SaaS app's company/workspace ID */
-  externalTenantId: string;
+  /**
+   * Your SaaS app's company/workspace ID (B2B). Omit it for an individual customer (D2C):
+   * the tenant is then keyed on `externalUserId`, the same tenant a D2C checkout creates.
+   */
+  externalTenantId?: string;
   /** Company/workspace name */
   name: string;
   /** URL-friendly slug (optional, auto-generated from name if not provided) */
   slug?: string;
   /** Owner's user ID from your app */
   externalUserId: string;
-  /** Owner's email (optional) */
+  /** Owner's email (optional). Also becomes the customer's email in the dashboard when it has none. */
   ownerEmail?: string;
   /** Owner's name (optional) */
   ownerName?: string;
@@ -149,7 +152,8 @@ export interface GetTenantResponse {
   organization: {
     id: string;
     name: string;
-    type: "b2b" | "d2c";
+    /** @deprecated No longer sent — the customer type belongs to the product (`Plan.product.type`). */
+    type?: "b2b" | "d2c";
   };
 }
 
@@ -184,6 +188,8 @@ export interface Product {
   id: string;
   name: string;
   description?: string;
+  /** Who the product sells to: workspaces (`b2b`) or individuals (`d2c`). Decides how checkout keys the tenant. */
+  type?: "b2b" | "d2c";
 }
 
 export interface PaymentProviderMapping {
@@ -247,6 +253,10 @@ export interface GetPlansResponse {
   organization: {
     id: string;
     name: string;
+    /**
+     * @deprecated One organization may sell both kinds of product — read `plans[].product.type`.
+     * This is the products' shared type, and `b2b` when they differ.
+     */
     type: "b2b" | "d2c";
   };
 }
@@ -375,7 +385,8 @@ export interface GetSubscriptionsResponse {
   organization: {
     id: string;
     name: string;
-    type: "b2b" | "d2c";
+    /** @deprecated No longer sent — the customer type belongs to the product (`Plan.product.type`). */
+    type?: "b2b" | "d2c";
   };
 }
 
@@ -878,17 +889,17 @@ export class CrovverClient {
   }
 
   // ────────────────────────────────────────────────────────────────────────
-  // TENANT MANAGEMENT (B2B Only)
+  // TENANT MANAGEMENT
   // ────────────────────────────────────────────────────────────────────────
 
   /**
-   * Create a new tenant (B2B organizations only)
-   *
-   * For D2C organizations, tenants are automatically created during checkout.
+   * Create a tenant: a workspace (B2B, pass `externalTenantId`) or an individual customer
+   * (D2C, omit it — the tenant is keyed on `externalUserId`). A D2C checkout also creates
+   * its tenant on its own, so this call is optional there.
    *
    * @param request - Tenant creation request
    * @returns Created tenant and owner information
-   * @throws {CrovverError} If the organization is D2C or tenant already exists
+   * @throws {CrovverError} If the tenant id or slug already exists
    *
    * @example
    * ```typescript

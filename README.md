@@ -75,7 +75,7 @@ Automatic retries apply to 5xx, 429, 408, and network errors. 4xx errors are **n
 
 ## API Reference
 
-### Tenant Management (B2B Only)
+### Tenant Management
 
 #### `createTenant`
 
@@ -83,12 +83,14 @@ Automatic retries apply to 5xx, 429, 408, and network errors. 4xx errors are **n
 const result = await crovver.createTenant({
   externalTenantId: "company-123",
   name: "Acme Corporation",
-  ownerExternalUserId: "user-456",
+  externalUserId: "user-456",
   ownerEmail: "admin@acme.com",
   ownerName: "John Doe",
 });
 console.log("Tenant ID:", result.tenant.id);
 ```
+
+Omit `externalTenantId` for an individual (D2C) customer: the tenant is then keyed on `externalUserId`.
 
 #### `getTenant`
 
