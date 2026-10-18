@@ -567,6 +567,26 @@ export interface GetAllocationsResponse {
   pagination:  AllocationPagination;
 }
 
+export interface RemoveSeatRequest {
+  /** External tenant/workspace ID */
+  requestingEntityId: string;
+  /** The user whose seat is taken away */
+  externalUserId: string;
+}
+
+export interface RemoveSeatResponse {
+  externalUserId: string;
+  /** True when the user had already been removed: a retry, nothing changed */
+  alreadyRemoved: boolean;
+  removedAt: string;
+  /** The seat stays on the subscription, vacant: `capacityUnits` is unchanged */
+  capacity: {
+    activeCount: number;
+    capacityUnits: number;
+    vacantSeats: number;
+  };
+}
+
 // ────────────────────────────────────────────────────────────────────────
 // Credit Types
 // ────────────────────────────────────────────────────────────────────────
@@ -1421,6 +1441,32 @@ export class CrovverClient {
         });
         const response = await this.client.get<GetAllocationsResponse>(
           `/api/public/capacity/allocations?${params}`
+        );
+        return response.data;
+      });
+    },
+
+    /**
+     * Take a user's seat away, at once. The seat stays on the subscription,
+     * vacant, so the next allocation can use it straight away: capacity, the
+     * payment provider and the price are unchanged (seats are reduced at
+     * renewal; nothing is refunded).
+     *
+     * Safe to retry: removing a user who is already removed returns
+     * `alreadyRemoved: true`. A user who never had a seat is a 404.
+     *
+     * @example
+     * const { capacity } = await crovver.capacity.remove({
+     *   requestingEntityId: 'company-123',
+     *   externalUserId: 'u2',
+     * });
+     * console.log(`${capacity.vacantSeats} seats free`);
+     */
+    remove: async (request: RemoveSeatRequest): Promise<RemoveSeatResponse> => {
+      return this.withRetry(async () => {
+        const response = await this.client.post<RemoveSeatResponse>(
+          "/api/public/capacity/remove",
+          request
         );
         return response.data;
       });

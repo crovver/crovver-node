@@ -107,6 +107,22 @@ describe("CrovverClient", () => {
     });
   });
 
+  describe("capacity.remove", () => {
+    it("posts the tenant and the user, and returns the vacant capacity", async () => {
+      const removed = {
+        externalUserId: "u2",
+        alreadyRemoved: false,
+        removedAt: "2026-10-18T12:00:00.000Z",
+        capacity: { activeCount: 2, capacityUnits: 5, vacantSeats: 3 },
+      };
+      const http = mockInstance(removed);
+      const client = new CrovverClient({ apiKey: "sk_test" });
+      const result = await client.capacity.remove({ requestingEntityId: "ws-1", externalUserId: "u2" });
+      expect(http.post).toHaveBeenCalledWith("/api/public/capacity/remove", { requestingEntityId: "ws-1", externalUserId: "u2" });
+      expect(result.capacity.vacantSeats).toBe(3);
+    });
+  });
+
   describe("checkUsageLimit", () => {
     it("sends metric without productSlug", async () => {
       const http = mockInstance({ allowed: true, current: 5, limit: 100, remaining: 95, percentage: 5, metric: "api_calls" });

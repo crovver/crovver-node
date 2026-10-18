@@ -26,6 +26,7 @@ rejects a D2C `createTenant`, sends no `product.type` and no `seatTiers`.
 
 ### Added
 
+- `capacity.remove({ requestingEntityId, externalUserId })`: take a user's seat away at once. The seat stays on the subscription, vacant, for the next allocation; capacity and price are unchanged until renewal. Returns `RemoveSeatResponse` (`alreadyRemoved` on a retry). Needs the server's `POST /api/public/capacity/remove`.
 - Tiered seat plans: `Plan.seatTiers` and, on subscription responses, `PlanPricing.seatTiers` (`PlanSeatTier`: `currency`, `minQuantity`, `maxQuantity`, `price`). A band's price is the whole period's price for any seat count in its range; a tiered plan's `basePrice` and `perSeatPrice` are 0.
 - `planPeriodCharge(plan, seats, currency?)` and `seatTierFor(tiers, currency, seats)`: price a plan at a seat count by the rules Crovver charges, tiered or not.
 

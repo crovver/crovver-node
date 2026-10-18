@@ -214,6 +214,24 @@ console.log(`Prorated amount: ${checkout.prorationAmount} ${checkout.prorationDe
 
 ---
 
+### Seats
+
+#### `capacity.remove`
+
+Takes a user's seat away at once, e.g. when they leave the workspace. The seat stays on the
+subscription, vacant, so the next person you allocate takes it straight away. Capacity and price do
+not change until renewal, and nothing is refunded. Safe to retry (`alreadyRemoved: true`).
+
+```typescript
+const { capacity } = await crovver.capacity.remove({
+  requestingEntityId: "company-123",
+  externalUserId: "user-42",
+});
+console.log(`${capacity.activeCount} / ${capacity.capacityUnits} seats used, ${capacity.vacantSeats} free`);
+```
+
+---
+
 ### Billing
 
 #### `getInvoices`
