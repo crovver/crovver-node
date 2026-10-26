@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - Unreleased
+
+The SDK for the revamped Crovver server. Release only after that server release: an older server
+rejects a D2C `createTenant`, sends no `product.type` and no `seatTiers`.
+
+### Removed (breaking)
+
+- `recordUsage()`, `RecordUsageRequest` and `RecordUsageResponse`. The server's usage-events route is deprecated and nothing reads what it writes; consume credit pools with `consumeCredits()` and read them with `getCreditsBalance()`.
+- `Plan.payment_providers` (use `paymentProviders`) and `Plan.created_at` / `Plan.updated_at` (use `createdAt` / `updatedAt`). The plans endpoint never sent the snake-case fields.
+- `organization.type` on `GetPlansResponse`, `GetTenantResponse` and `GetSubscriptionsResponse`. The customer type belongs to the product: read `plans[].product.type`.
+
+### Changed
+
+- `CreateTenantRequest.externalTenantId` is optional: omit it to create an individual (D2C) customer keyed on `externalUserId`.
+- `Product.type` (`"b2b" | "d2c"`) added to plans' `product`.
+- `GetPlansResponse.organization.type` is deprecated — read `plans[].product.type`.
+- `GetTenantResponse.organization.type` and `GetSubscriptionsResponse.organization.type` are optional and deprecated: the
+  server no longer sends them. Type-level change for strict-null consumers that read them.
+
+### Added
+
+- `capacity.remove({ requestingEntityId, externalUserId })`: take a user's seat away at once. The seat stays on the subscription, vacant, for the next allocation; capacity and price are unchanged until renewal. Returns `RemoveSeatResponse` (`alreadyRemoved` on a retry). Needs the server's `POST /api/public/capacity/remove`.
+- Tiered seat plans: `Plan.seatTiers` and, on subscription responses, `PlanPricing.seatTiers` (`PlanSeatTier`: `currency`, `minQuantity`, `maxQuantity`, `price`). A band's price is the whole period's price for any seat count in its range; a tiered plan's `basePrice` and `perSeatPrice` are 0.
+- `planPeriodCharge(plan, seats, currency?)` and `seatTierFor(tiers, currency, seats)`: price a plan at a seat count by the rules Crovver charges, tiered or not.
+
+### Changed
+
+- `CreateProrationCheckoutResponse.prorationId` is `string | null`, and the response carries `invoiceId`. On a tiered plan, a seat increase that stays in the current band is applied at once with `requiresPayment: false` and no proration record.
+
 ## [1.0.0] - 2026-03-29
 
 ### Added

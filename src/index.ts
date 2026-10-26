@@ -104,15 +104,18 @@ export class CrovverError extends Error {
 // ────────────────────────────────────────────────────────────────────────
 
 export interface CreateTenantRequest {
-  /** Your SaaS app's company/workspace ID */
-  externalTenantId: string;
+  /**
+   * Your SaaS app's company/workspace ID (B2B). Omit it for an individual customer (D2C):
+   * the tenant is then keyed on `externalUserId`, the same tenant a D2C checkout creates.
+   */
+  externalTenantId?: string;
   /** Company/workspace name */
   name: string;
   /** URL-friendly slug (optional, auto-generated from name if not provided) */
   slug?: string;
   /** Owner's user ID from your app */
   externalUserId: string;
-  /** Owner's email (optional) */
+  /** Owner's email (optional). Also becomes the customer's email in the dashboard when it has none. */
   ownerEmail?: string;
   /** Owner's name (optional) */
   ownerName?: string;
@@ -149,7 +152,6 @@ export interface GetTenantResponse {
   organization: {
     id: string;
     name: string;
-    type: "b2b" | "d2c";
   };
 }
 
@@ -173,6 +175,25 @@ export interface PlanPricing {
   minSeats?: number | null;
   /** Maximum number of seats */
   maxSeats?: number | null;
+  /**
+   * Subscription responses only: the plan's seat bands in the subscription's currency.
+   * Empty for a plan that is not tiered. See {@link PlanSeatTier}.
+   */
+  seatTiers?: PlanSeatTier[];
+}
+
+/**
+ * One seat band of a tiered plan. The band's `price` is the whole billing period's price for any
+ * seat count in `[minQuantity, maxQuantity]` — a flat price for the range, not a per-seat rate.
+ * A tiered plan's `basePrice` and `perSeatPrice` are 0; use {@link planPeriodCharge} to price it.
+ */
+export interface PlanSeatTier {
+  currency: string;
+  minQuantity: number;
+  /** `null` for the open top band */
+  maxQuantity: number | null;
+  /** Two-decimal string, e.g. "250.00" */
+  price: string;
 }
 
 export interface PlanTrial {
@@ -184,6 +205,8 @@ export interface Product {
   id: string;
   name: string;
   description?: string;
+  /** Who the product sells to: workspaces (`b2b`) or individuals (`d2c`). Decides how checkout keys the tenant. */
+  type?: "b2b" | "d2c";
 }
 
 export interface PaymentProviderMapping {
@@ -226,6 +249,11 @@ export interface Plan {
   pricing: PlanPricing;
   /** All configured prices, one per currency */
   prices: PlanPrice[];
+  /**
+   * Seat bands for every currency, ordered by currency then `minQuantity`. Empty unless the plan is
+   * tiered; absent from crovver-mvp versions that predate tiered plans.
+   */
+  seatTiers?: PlanSeatTier[];
   trial: PlanTrial;
   test_mode: boolean;
   isFree: boolean;
@@ -233,11 +261,7 @@ export interface Plan {
   features: Record<string, boolean>;
   creditPools: CreditPool[];
   product: Product;
-  /** @deprecated Use paymentProviders */
-  payment_providers: PaymentProviderMapping[];
   paymentProviders: PaymentProviderMapping[];
-  created_at: string;
-  updated_at: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -247,7 +271,6 @@ export interface GetPlansResponse {
   organization: {
     id: string;
     name: string;
-    type: "b2b" | "d2c";
   };
 }
 
@@ -375,7 +398,6 @@ export interface GetSubscriptionsResponse {
   organization: {
     id: string;
     name: string;
-    type: "b2b" | "d2c";
   };
 }
 
@@ -441,21 +463,6 @@ export interface CanAccessRequest {
 
 export interface CanAccessResponse {
   canAccess: boolean;
-}
-
-export interface RecordUsageRequest {
-  /** External tenant ID (B2B) or user ID (D2C) */
-  requestingEntityId: string;
-  /** Metric key to record usage for */
-  metric: string;
-  /** Usage value (default: 1) */
-  value?: number;
-  /** Custom metadata */
-  metadata?: Record<string, unknown>;
-}
-
-export interface RecordUsageResponse {
-  success: boolean;
 }
 
 export interface CheckUsageLimitRequest {
@@ -560,6 +567,26 @@ export interface GetAllocationsResponse {
   pagination:  AllocationPagination;
 }
 
+export interface RemoveSeatRequest {
+  /** External tenant/workspace ID */
+  requestingEntityId: string;
+  /** The user whose seat is taken away */
+  externalUserId: string;
+}
+
+export interface RemoveSeatResponse {
+  externalUserId: string;
+  /** True when the user had already been removed: a retry, nothing changed */
+  alreadyRemoved: boolean;
+  removedAt: string;
+  /** The seat stays on the subscription, vacant: `capacityUnits` is unchanged */
+  capacity: {
+    activeCount: number;
+    capacityUnits: number;
+    vacantSeats: number;
+  };
+}
+
 // ────────────────────────────────────────────────────────────────────────
 // Credit Types
 // ────────────────────────────────────────────────────────────────────────
@@ -619,8 +646,14 @@ export interface CreateProrationCheckoutRequest {
 }
 
 export interface CreateProrationCheckoutResponse {
-  prorationId: string;
+  /**
+   * `null` when nothing is due: on a tiered plan, a seat count that stays in the current band (or a
+   * step with nothing left to prorate) is applied at once, with `requiresPayment: false`.
+   */
+  prorationId: string | null;
   checkoutUrl: string | null;
+  /** The pending invoice a redirect-gateway (Khalti / eSewa / ConnectIPS) proration settles. */
+  invoiceId?: string | null;
   requiresPayment: boolean;
   prorationAmount: number;
   prorationDetails: Record<string, unknown>;
@@ -725,6 +758,49 @@ function calculateBackoff(
 // ════════════════════════════════════════════════════════════════════════
 // CROVVER CLIENT
 // ════════════════════════════════════════════════════════════════════════
+
+/** The band holding `seats` in one currency's ladder, or `null`. */
+export function seatTierFor(
+  tiers: readonly PlanSeatTier[],
+  currency: string,
+  seats: number
+): PlanSeatTier | null {
+  const cur = currency.toUpperCase();
+  return (
+    tiers
+      .filter((t) => t.currency.toUpperCase() === cur)
+      .sort((a, b) => a.minQuantity - b.minQuantity)
+      .find((t) => t.minQuantity <= seats && (t.maxQuantity == null || seats <= t.maxQuantity)) ?? null
+  );
+}
+
+/**
+ * One billing period's price for a plan at a seat count, by the same rules Crovver charges:
+ * free is 0; a tiered plan is the price of the band holding `seats` (`null` when no band does — that
+ * count cannot be purchased); another seat-based plan is `basePrice + max(0, seats − includedSeats) ×
+ * perSeatPrice`; a flat plan is its amount. `null` too when the plan has no price in `currency`.
+ * Country-localized prices are not on the plans list, so a localized customer may be charged otherwise.
+ */
+export function planPeriodCharge(
+  plan: Pick<Plan, "isFree" | "isSeatBased" | "pricing" | "prices" | "seatTiers">,
+  seats: number,
+  currency: string = plan.pricing.currency
+): number | null {
+  if (plan.isFree) return 0;
+  const cur = currency.toUpperCase();
+  const ladder = (plan.seatTiers ?? []).filter((t) => t.currency.toUpperCase() === cur);
+  if (plan.isSeatBased && ladder.length > 0) {
+    const band = seatTierFor(ladder, cur, seats);
+    return band ? Number(band.price) : null;
+  }
+  const price = plan.prices.find((p) => p.currency.toUpperCase() === cur);
+  if (!price) return null;
+  if (!plan.isSeatBased) return price.amount == null ? null : Number(price.amount);
+  return (
+    Number(price.basePrice ?? 0) +
+    Math.max(seats - (plan.pricing.includedSeats ?? 0), 0) * Number(price.perSeatPrice ?? 0)
+  );
+}
 
 export class CrovverClient {
   private client: AxiosInstance;
@@ -878,17 +954,17 @@ export class CrovverClient {
   }
 
   // ────────────────────────────────────────────────────────────────────────
-  // TENANT MANAGEMENT (B2B Only)
+  // TENANT MANAGEMENT
   // ────────────────────────────────────────────────────────────────────────
 
   /**
-   * Create a new tenant (B2B organizations only)
-   *
-   * For D2C organizations, tenants are automatically created during checkout.
+   * Create a tenant: a workspace (B2B, pass `externalTenantId`) or an individual customer
+   * (D2C, omit it — the tenant is keyed on `externalUserId`). A D2C checkout also creates
+   * its tenant on its own, so this call is optional there.
    *
    * @param request - Tenant creation request
    * @returns Created tenant and owner information
-   * @throws {CrovverError} If the organization is D2C or tenant already exists
+   * @throws {CrovverError} If the tenant id or slug already exists
    *
    * @example
    * ```typescript
@@ -1069,44 +1145,6 @@ export class CrovverClient {
         }
       );
       return response.data.canAccess;
-    });
-  }
-
-  /**
-   * Record usage for a metric
-   *
-   * @param requestingEntityId - External tenant ID (B2B) or user ID (D2C)
-   * @param metric - The metric key to record usage for
-   * @param value - Usage value (default: 1)
-   * @param metadata - Optional metadata
-   *
-   * @example
-   * ```typescript
-   * await crovver.recordUsage('company-123', 'api-calls', 1, {
-   *   endpoint: '/api/v1/users',
-   *   method: 'GET'
-   * });
-   * ```
-   */
-  async recordUsage(
-    requestingEntityId: string,
-    metric: string,
-    value: number = 1,
-    metadata?: Record<string, unknown>,
-    productSlug?: string
-  ): Promise<RecordUsageResponse> {
-    return this.withRetry(async () => {
-      const response = await this.client.post<RecordUsageResponse>(
-        "/api/public/record-usage",
-        {
-          requestingEntityId,
-          metric,
-          value,
-          metadata,
-          ...(productSlug ? { productSlug } : {}),
-        }
-      );
-      return response.data;
     });
   }
 
@@ -1403,6 +1441,32 @@ export class CrovverClient {
         });
         const response = await this.client.get<GetAllocationsResponse>(
           `/api/public/capacity/allocations?${params}`
+        );
+        return response.data;
+      });
+    },
+
+    /**
+     * Take a user's seat away, at once. The seat stays on the subscription,
+     * vacant, so the next allocation can use it straight away: capacity, the
+     * payment provider and the price are unchanged (seats are reduced at
+     * renewal; nothing is refunded).
+     *
+     * Safe to retry: removing a user who is already removed returns
+     * `alreadyRemoved: true`. A user who never had a seat is a 404.
+     *
+     * @example
+     * const { capacity } = await crovver.capacity.remove({
+     *   requestingEntityId: 'company-123',
+     *   externalUserId: 'u2',
+     * });
+     * console.log(`${capacity.vacantSeats} seats free`);
+     */
+    remove: async (request: RemoveSeatRequest): Promise<RemoveSeatResponse> => {
+      return this.withRetry(async () => {
+        const response = await this.client.post<RemoveSeatResponse>(
+          "/api/public/capacity/remove",
+          request
         );
         return response.data;
       });

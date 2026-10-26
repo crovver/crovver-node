@@ -83,6 +83,46 @@ describe("CrovverClient", () => {
     });
   });
 
+  describe("createTenant", () => {
+    const created = { tenant: { id: "t-1" }, owner: { id: "o-1" }, message: "Tenant created successfully" };
+
+    it("creates a D2C customer without externalTenantId", async () => {
+      const http = mockInstance(created);
+      const client = new CrovverClient({ apiKey: "sk_test" });
+      await client.createTenant({ name: "Ada", externalUserId: "user-1", ownerEmail: "ada@example.com" });
+      expect(http.post).toHaveBeenCalledWith(
+        "/api/public/tenants",
+        { name: "Ada", externalUserId: "user-1", ownerEmail: "ada@example.com" }
+      );
+    });
+
+    it("still sends externalTenantId for a B2B workspace", async () => {
+      const http = mockInstance(created);
+      const client = new CrovverClient({ apiKey: "sk_test" });
+      await client.createTenant({ externalTenantId: "ws-1", name: "Acme", externalUserId: "user-1" });
+      expect(http.post).toHaveBeenCalledWith(
+        "/api/public/tenants",
+        { externalTenantId: "ws-1", name: "Acme", externalUserId: "user-1" }
+      );
+    });
+  });
+
+  describe("capacity.remove", () => {
+    it("posts the tenant and the user, and returns the vacant capacity", async () => {
+      const removed = {
+        externalUserId: "u2",
+        alreadyRemoved: false,
+        removedAt: "2026-10-18T12:00:00.000Z",
+        capacity: { activeCount: 2, capacityUnits: 5, vacantSeats: 3 },
+      };
+      const http = mockInstance(removed);
+      const client = new CrovverClient({ apiKey: "sk_test" });
+      const result = await client.capacity.remove({ requestingEntityId: "ws-1", externalUserId: "u2" });
+      expect(http.post).toHaveBeenCalledWith("/api/public/capacity/remove", { requestingEntityId: "ws-1", externalUserId: "u2" });
+      expect(result.capacity.vacantSeats).toBe(3);
+    });
+  });
+
   describe("checkUsageLimit", () => {
     it("sends metric without productSlug", async () => {
       const http = mockInstance({ allowed: true, current: 5, limit: 100, remaining: 95, percentage: 5, metric: "api_calls" });
@@ -101,28 +141,6 @@ describe("CrovverClient", () => {
       expect(http.post).toHaveBeenCalledWith(
         "/api/public/check-usage-limit",
         { requestingEntityId: "tenant-1", metric: "api_calls", productSlug: "ats" }
-      );
-    });
-  });
-
-  describe("recordUsage", () => {
-    it("sends metric without productSlug", async () => {
-      const http = mockInstance({ message: "Usage recorded", metric: "api_calls", recordedValue: 1 });
-      const client = new CrovverClient({ apiKey: "sk_test" });
-      await client.recordUsage("tenant-1", "api_calls", 1);
-      expect(http.post).toHaveBeenCalledWith(
-        "/api/public/record-usage",
-        expect.objectContaining({ requestingEntityId: "tenant-1", metric: "api_calls" })
-      );
-    });
-
-    it("includes productSlug when provided", async () => {
-      const http = mockInstance({ message: "Usage recorded", metric: "api_calls", recordedValue: 1 });
-      const client = new CrovverClient({ apiKey: "sk_test" });
-      await client.recordUsage("tenant-1", "api_calls", 1, undefined, "ats");
-      expect(http.post).toHaveBeenCalledWith(
-        "/api/public/record-usage",
-        expect.objectContaining({ productSlug: "ats" })
       );
     });
   });
@@ -158,5 +176,46 @@ describe("CrovverClient", () => {
         isRetryable: false,
       });
     });
+  });
+});
+
+describe("planPeriodCharge", () => {
+  const { planPeriodCharge, seatTierFor } = require("../src/index");
+  const tiered = {
+    isFree: false,
+    isSeatBased: true,
+    pricing: { currency: "USD", interval: "monthly", isSeatBased: true, basePrice: 0, includedSeats: 10, perSeatPrice: 0 },
+    prices: [{ currency: "USD", amount: null, basePrice: 0, perSeatPrice: 0 }],
+    seatTiers: [
+      { currency: "USD", minQuantity: 1, maxQuantity: 10, price: "80.00" },
+      { currency: "USD", minQuantity: 11, maxQuantity: 50, price: "250.00" },
+      { currency: "USD", minQuantity: 51, maxQuantity: null, price: "400.00" },
+    ],
+  };
+
+  it("prices a tiered plan by the band holding the seat count, not seats × a band", () => {
+    expect(planPeriodCharge(tiered, 10)).toBe(80);
+    expect(planPeriodCharge(tiered, 11)).toBe(250);
+    expect(planPeriodCharge(tiered, 500)).toBe(400);
+    expect(seatTierFor(tiered.seatTiers, "usd", 50)?.minQuantity).toBe(11);
+  });
+
+  it("is null for a count no band holds, or a currency the plan has no price in", () => {
+    expect(planPeriodCharge({ ...tiered, seatTiers: tiered.seatTiers.slice(0, 2) }, 51)).toBeNull();
+    expect(planPeriodCharge({ ...tiered, seatTiers: [] }, 1, "EUR")).toBeNull();
+  });
+
+  it("keeps base + extra seats × per seat for a plan without bands, and the amount for a flat plan", () => {
+    const perSeat = {
+      ...tiered,
+      seatTiers: [],
+      pricing: { ...tiered.pricing, includedSeats: 5 },
+      prices: [{ currency: "USD", amount: null, basePrice: 50, perSeatPrice: 5 }],
+    };
+    expect(planPeriodCharge(perSeat, 8)).toBe(65);
+    expect(planPeriodCharge(perSeat, 2)).toBe(50);
+    const flat = { isFree: false, isSeatBased: false, pricing: { currency: "USD", interval: "monthly", isSeatBased: false }, prices: [{ currency: "USD", amount: 29, basePrice: null, perSeatPrice: null }] };
+    expect(planPeriodCharge(flat, 1)).toBe(29);
+    expect(planPeriodCharge({ ...flat, isFree: true }, 1)).toBe(0);
   });
 });

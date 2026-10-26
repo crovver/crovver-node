@@ -10,7 +10,7 @@ Official Node.js/TypeScript SDK for integrating [Crovver](https://crovver.com) s
 
 - **Complete API Coverage** — tenants, plans, subscriptions, checkout, entitlements, invoices, proration
 - **TypeScript Support** — full type definitions included
-- **B2B & D2C Support** — works with both organization types
+- **B2B & D2C Support** — works with both customer types (per product)
 - **Error Handling** — `CrovverError` class with status codes and retryability flags
 - **Automatic Retries** — exponential backoff with jitter for transient failures
 - **No Checkout Retry** — payment-creating endpoints are never retried to prevent duplicate charges
@@ -75,7 +75,7 @@ Automatic retries apply to 5xx, 429, 408, and network errors. 4xx errors are **n
 
 ## API Reference
 
-### Tenant Management (B2B Only)
+### Tenant Management
 
 #### `createTenant`
 
@@ -83,12 +83,14 @@ Automatic retries apply to 5xx, 429, 408, and network errors. 4xx errors are **n
 const result = await crovver.createTenant({
   externalTenantId: "company-123",
   name: "Acme Corporation",
-  ownerExternalUserId: "user-456",
+  externalUserId: "user-456",
   ownerEmail: "admin@acme.com",
   ownerName: "John Doe",
 });
 console.log("Tenant ID:", result.tenant.id);
 ```
+
+Omit `externalTenantId` for an individual (D2C) customer: the tenant is then keyed on `externalUserId`.
 
 #### `getTenant`
 
@@ -179,14 +181,6 @@ const checkout = await crovver.createCheckoutSession({
 const canAccess = await crovver.canAccess("company-123", "advanced-analytics");
 ```
 
-#### `recordUsage`
-
-```typescript
-await crovver.recordUsage("company-123", "api-calls", 1, {
-  endpoint: "/api/v1/users",
-});
-```
-
 #### `checkUsageLimit`
 
 ```typescript
@@ -216,6 +210,24 @@ if (checkout.checkoutUrl) {
   window.location.href = checkout.checkoutUrl;
 }
 console.log(`Prorated amount: ${checkout.prorationAmount} ${checkout.prorationDetails.currency}`);
+```
+
+---
+
+### Seats
+
+#### `capacity.remove`
+
+Takes a user's seat away at once, e.g. when they leave the workspace. The seat stays on the
+subscription, vacant, so the next person you allocate takes it straight away. Capacity and price do
+not change until renewal, and nothing is refunded. Safe to retry (`alreadyRemoved: true`).
+
+```typescript
+const { capacity } = await crovver.capacity.remove({
+  requestingEntityId: "company-123",
+  externalUserId: "user-42",
+});
+console.log(`${capacity.activeCount} / ${capacity.capacityUnits} seats used, ${capacity.vacantSeats} free`);
 ```
 
 ---
